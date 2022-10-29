@@ -4,6 +4,7 @@
 #include <string>
 #include <time.h>
 #include <stdlib.h>
+#include <vector>
 
 
 
@@ -23,6 +24,8 @@ short dir[5] = {0, 1, 0, -1, 0};
 short win;
 int temp;
 bool skip, first_click;
+
+std::vector<std::pair<short, short>> stack;
 
 
 
@@ -242,6 +245,8 @@ void setup_game() {
 	first_click = true;
 	win = 0;
 
+	stack.clear();
+
 	memset(visible, false, sizeof(visible));
 	memset(flag, false, sizeof(flag));
 
@@ -250,6 +255,7 @@ void setup_game() {
 			table[x][y] = '0';
 		}
 	}
+
 }
 
 
@@ -356,11 +362,6 @@ void print_game() {
 	// initial chosen cell
 	print_cell(1, 1, false, true);
 	temp = 22125080;
-
-	// for (int i = 0; i <= 256; ++i) {
-	// 	SetConsoleTextAttribute(h_console, i);
-	// 	std::cout << i << " test" << std::endl;
-	// } std::cin >> row;
 }
 
 
@@ -376,6 +377,12 @@ void flood_fill(short x, short y) {
 			print_cell(new_x, new_y, false, false);
 
 			flood_fill(new_x, new_y);
+		}
+
+		if (visible[new_x][new_y] == false && table[new_x][new_y] != ' ' && table[new_x][new_y] != '*') {
+			visible[new_x][new_y] = true;
+
+			print_cell(new_x, new_y, false, false);
 		}
 	}
 }
@@ -414,12 +421,17 @@ void keystroke_game() {
 						for (short y = std::max(1, game_y - 1); y <= std::min(row, (short)(game_y + 1)); ++y) {
 							for (short x = std::max(1, game_x - 1); x <= std::min(col, (short)(game_x + 1)); ++x) {
 								if (flag[x][y] == false && visible[x][y] == false) {
+
 									visible[x][y] = true;
-									if (table[x][y] == '*') {
-										end_game();
-										return;
+
+									if (table[x][y] == '*') stack.push_back(std::make_pair(x, y));
+
+									if (table[x][y] == ' ') {
+										flood_fill(game_x, game_y);
 									}
+
 									print_cell(x, y, false, false);
+
 								}
 							}
 						}
@@ -433,8 +445,7 @@ void keystroke_game() {
 
 				visible[game_x][game_y] = true;
 
-				if (table[game_x][game_y] == '*') {
-					// memset(visible, true, sizeof(visible));
+				if (table[game_x][game_y] == '*' || stack.size()) {
 					end_game();
 					return;
 				}
@@ -465,9 +476,16 @@ void end_game() {
 		}
 	}
 
+	while (stack.size()) {
+		short x = stack[0].first, y = stack[0].second;
+		print_cell(x, y, true, true);
+		stack.pop_back();
+	}
+
 	print("<r> to restart", 80, 8, 15);
 	print("<f> to return to menu", 80, 10, 15);
 	print("<esc> to exit", 80, 12, 15);
+	// print("<shift s> to save", 80, 14, 15);
 
 	while (true) {
 		if (kbhit()) {
