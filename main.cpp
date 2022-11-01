@@ -5,6 +5,7 @@
 #include <time.h>
 #include <stdlib.h>
 #include <vector>
+#include <sstream>
 
 
 
@@ -15,15 +16,16 @@ HANDLE h_console = GetStdHandle(STD_OUTPUT_HANDLE);
 short valid_ascii[7] = {13, 27, 28, 100, 102, 114, 224};
 short cur_x, cur_y, game_x, game_y;
 
-char table[65][25];
-bool visible[65][25], flag[65][25];
+char table[61][21];
+bool visible[61][21], flag[61][21];
 short col, row;
 short mines;
 short dir[5] = {0, 1, 0, -1, 0};
 
-short win;
+time_t timer, last_time;
+std::string current_timer;
 int temp;
-bool skip, first_click;
+bool skip, first_click, win;
 
 std::vector<std::pair<short, short>> stack;
 
@@ -81,6 +83,15 @@ short random(short l, short r) {
 }
 
 
+// convert number to string
+std::string i2s(time_t x) {
+	std::stringstream ss;
+	ss << x;
+	std::string sf = ss.str();
+	return sf;
+}
+
+
 
 // game functions
 
@@ -97,6 +108,7 @@ void print_game();
 void keystroke_game();
 void end_game();
 void flood_fill();
+bool check_win();
 
 
 int main() {
@@ -198,7 +210,7 @@ void keystroke_menu() {
 						system("cls");
 						at(7, 8);
 						SetConsoleTextAttribute(h_console, 15);
-						std::cout << "Number of mines [1, " << col * row - 1 << "]:";
+						std::cout << "Number of mines [1, " << std::min(col * row - 1, 999) << "]:";
 						SetConsoleTextAttribute(h_console, 7);
 						at(7, 9);
 						std::cin >> mines;
@@ -242,8 +254,9 @@ void play() {
 void setup_game() {
 	game_x = 1;
 	game_y = 1;
+
 	first_click = true;
-	win = 0;
+	win = false;
 
 	stack.clear();
 
@@ -255,7 +268,6 @@ void setup_game() {
 			table[x][y] = '0';
 		}
 	}
-
 }
 
 
@@ -277,7 +289,7 @@ void generate() {
 	for (short y = 1; y <= row; ++y) {
 		for (short x = 1; x <= col; ++x) {
 			if (table[x][y] != '0') continue;
-
+			temp = 22125080;
 			for (short j = std::max(1, y - 1); j <= std::min(row, (short)(y + 1)); ++j) {
 				for (short i = std::max(1, x - 1); i <= std::min(col, (short)(x + 1)); ++i) {
 					if (table[i][j] == '*') ++table[x][y];
@@ -348,6 +360,7 @@ std::pair<std::string, short> display(std::string s, bool e, bool c, bool v, boo
 void print_game() {
 	system("cls");
 
+	print("TIME 000", 90, 5, 15);
 	print("<right/up/left/down arrow> to move", 80, 8, 15);
 	print("<d> to discorver the cell", 80, 10, 15);
 	print("<f> to flag/unflag the cell", 80, 12, 15);
@@ -361,7 +374,6 @@ void print_game() {
 
 	// initial chosen cell
 	print_cell(1, 1, false, true);
-	temp = 22125080;
 }
 
 
@@ -422,13 +434,13 @@ void keystroke_game() {
 							for (short x = std::max(1, game_x - 1); x <= std::min(col, (short)(game_x + 1)); ++x) {
 								if (flag[x][y] == false && visible[x][y] == false) {
 
-									visible[x][y] = true;
-
 									if (table[x][y] == '*') stack.push_back(std::make_pair(x, y));
 
 									if (table[x][y] == ' ') {
 										flood_fill(game_x, game_y);
 									}
+
+									visible[x][y] = true;
 
 									print_cell(x, y, false, false);
 
@@ -441,6 +453,7 @@ void keystroke_game() {
 				if (first_click == true) {
 					first_click = false;
 					generate();
+					timer = last_time = time(NULL);
 				}
 
 				visible[game_x][game_y] = true;
@@ -463,12 +476,41 @@ void keystroke_game() {
 
 				print_cell(game_x, game_y, false, true);
 			}
+
+			// check win after keyboard hit
+			if(check_win()) {
+				// to not print selected bomb
+				game_x = game_y = 0;
+				win = true;
+
+				end_game();
+				return;
+			}
+		} else if (first_click == false) {
+			if (time(NULL) != last_time) {
+				current_timer = i2s(time(NULL) - timer);
+
+				if(current_timer == "999") {
+					game_x = game_y = 0;
+					end_game();
+					return;
+				}
+
+				last_time = time(NULL);
+				while (current_timer.size() < 3) current_timer = "0" + current_timer;
+
+				print(current_timer, 95, 5, 15);
+			}
 		}
 	}
 }
 
 void end_game() {
 	system("cls");
+
+	print("TIME", 90, 5, 15);
+	if (current_timer == "999") print(current_timer, 95, 5, 64);
+	else print(current_timer, 95, 5, 15);
 
 	for (short y = 1; y <= row; ++y) {
 		for (short x = 1; x <= col; ++x) {
@@ -487,6 +529,12 @@ void end_game() {
 	print("<esc> to exit", 80, 12, 15);
 	// print("<shift s> to save", 80, 14, 15);
 
+	time_t last_print = time(NULL);
+	short color_win[2] = {46, 234}, current_color = 0;
+
+	// initial printing
+	if (win == true) print("winner winner chicken dinner !", 20, 2, color_win[1]);
+
 	while (true) {
 		if (kbhit()) {
 			short key = input();
@@ -497,6 +545,27 @@ void end_game() {
 				skip = true;
 				return;
 			}
+		} else {
+			if (win == true) {
+				if (last_print + 1 <= time(NULL)) {
+					print("winner winner chicken dinner !", 20, 2, color_win[current_color]);
+					last_print = time(NULL);
+					// swap color
+					current_color ^= 1;
+				}
+			}
 		}
 	}
+}
+
+bool check_win() {
+	short count_visible = 0;
+
+	for (short y = 1; y <= row; ++y) {
+		for (short x = 1; x <= col; ++x) {
+			if (visible[x][y] == true || flag[x][y] == true) ++count_visible;
+		}
+	}
+
+	return (count_visible == row * col);
 }
