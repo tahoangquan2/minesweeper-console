@@ -6,28 +6,45 @@
 #include <stdlib.h>
 #include <vector>
 #include <sstream>
+#include <fstream>
 
 
 
 // system variables
 
 HANDLE h_console = GetStdHandle(STD_OUTPUT_HANDLE);
+std::vector<short> valid_ascii = {13, 27, 28, 83, 100, 102, 114, 224};
 
-short valid_ascii[7] = {13, 27, 28, 100, 102, 114, 224};
 short cur_x, cur_y, game_x, game_y;
+bool skip;
+int temp;
 
 char table[61][21];
 bool visible[61][21], flag[61][21];
-short col, row;
-short mines;
+short col, row, mines;
 short dir[5] = {0, 1, 0, -1, 0};
 
 time_t timer, last_time;
 std::string current_timer;
-int temp;
-bool skip, first_click, win;
+bool first_click, win;
 
 std::vector<std::pair<short, short>> stack;
+const int birth = 25112004;
+
+bool from_save;
+
+struct from_save {
+	char table[61][21];
+	bool visible[61][21], flag[61][21];
+
+	short col, row, mines;
+	short game_x, game_y;
+
+	std::string current_timer;
+	bool first_click;
+
+	short score_b, score_i, score_e;
+} save;
 
 
 
@@ -45,14 +62,16 @@ short input() {
 	short ascii = getch();
 	bool valid = false;
 
-	for (short i = 0; i < 7; ++i) {
+	for (short i = 0; i < valid_ascii.size(); ++i) {
 		if (ascii == valid_ascii[i]) {
 			valid = true;
 			break;
 		}
 	}
 
-	if (valid == false) return 0;
+	if (valid == false) {
+		return 0;
+	}
 
 	// esc
 	if (ascii == 27) {
@@ -61,7 +80,9 @@ short input() {
 	}
 
 	// read arrow
-	if (ascii == 224) ascii = getch();
+	if (ascii == 224) {
+		ascii = getch();
+	}
 
 	return ascii;
 }
@@ -92,6 +113,14 @@ std::string i2s(time_t x) {
 }
 
 
+// convert string to number
+time_t s2i(std::string ss) {
+	time_t c;
+	std::istringstream(ss) >> c;
+	return c;
+}
+
+
 
 // game functions
 
@@ -107,8 +136,11 @@ std::pair<std::string, short> display(std::string s, bool e, bool c, bool v, boo
 void print_game();
 void keystroke_game();
 void end_game();
-void flood_fill();
+void flood_fill(short x, short y);
 bool check_win();
+
+void read_file();
+void write_file();
 
 
 int main() {
@@ -126,6 +158,7 @@ int main() {
 void setup_menu() {
 	cur_x = 5;
 	cur_y = 8;
+	from_save = false;
 }
 
 
@@ -142,12 +175,36 @@ void print_menu() {
 		print("Intermediate", 7, 10, 11);
 		print("Expert", 7, 12, 12);
 		print("Custom", 7, 14, 13);
+		print("Load save", 7, 16, 15);
 
 		print("<up/down arrow> to change the selection", 80, 8, 15);
 		print("<enter> to confirm the selection", 80, 10, 15);
 		print("<esc> to exit", 80, 12, 15);
 
 		print(">", cur_x, cur_y, 15);
+
+		read_file();
+		short temp = save.col;
+		save.col = 0;
+		write_file();
+		save.col = temp;
+
+		print("LEADERBOARD", 7, 20);
+		print("Beginner:", 7, 22);
+		print("Intermediate:", 7, 24);
+		print("Expert:", 7, 26);
+
+		if (save.score_b != 0) {
+			print(i2s(save.score_b), 17, 22, 10);
+		}
+
+		if (save.score_i != 0) {
+			print(i2s(save.score_i), 21, 24, 11);
+		}
+
+		if (save.score_e != 0) {
+			print(i2s(save.score_e), 15, 26, 12);
+		}
 
 		keystroke_menu();
 
@@ -165,33 +222,42 @@ void keystroke_menu() {
 			if (key == 72 || key == 80) {
 				print(" ", cur_x, cur_y);
 
-				if (key == 72)
-					cur_y = std::max(cur_y - 2, 8);
-				else
-					cur_y = std::min(cur_y + 2, 14);
+				if (key == 72) {
+					cur_y = cur_y - 2;
+					if (cur_y < 8) cur_y = 16;
+				} else {
+					cur_y = cur_y + 2;
+					if (cur_y > 16) cur_y = 8;
+				}
 
 				print(">", cur_x, cur_y, 15);
 			}
 
 			if (key == 13) {
+
 				if (cur_y == 8) {
 					col = row = 9;
 					mines = 10;
+					play();
+					return;
 				}
 
 				if (cur_y == 10) {
 					col = row = 16;
 					mines = 40;
+					play();
+					return;
 				}
 
 				if (cur_y == 12) {
 					col = 30;
 					row = 16;
 					mines = 99;
+					play();
+					return;
 				}
 
 				if (cur_y == 14) {
-
 					do {
 						system("cls");
 						print("Number of rows [2, 20]:", 7, 8, 15);
@@ -216,11 +282,18 @@ void keystroke_menu() {
 						std::cin >> mines;
 					} while (mines < 1 || col * row - 1 < mines);
 
+					play();
+					return;
 				}
 
-				play();
-
-				return;
+				if (cur_y == 16 && save.col != 0) {
+					from_save = true;
+					col = save.col;
+					row = save.row;
+					mines = save.mines;
+					play();
+					return;
+				}
 			}
 		}
 	}
@@ -242,34 +315,48 @@ void play() {
 
 	while (skip == false) {
 		setup_game();
-		// first click can be a mine, move to keystroke_game
-		// generate();
 		print_game();
 		keystroke_game();
+		from_save = false;
 	}
 }
 
 
 // reset all variables in game
 void setup_game() {
-	game_x = 1;
-	game_y = 1;
+	if (from_save == false) {
+		game_x = 1;
+		game_y = 1;
+	} else {
+		game_x = save.game_x;
+		game_y = save.game_y;
+	}
 
 	first_click = true;
 	win = false;
+	current_timer = "000";
 
 	stack.clear();
 
-	memset(visible, false, sizeof(visible));
-	memset(flag, false, sizeof(flag));
+	if (from_save == false) {
+		memset(visible, false, sizeof(visible));
+		memset(flag, false, sizeof(flag));
 
-	for (short y = 1; y <= 20; ++y) {
-		for (short x = 1; x <= 60; ++x) {
-			table[x][y] = '0';
+		for (short y = 1; y <= 20; ++y) {
+			for (short x = 1; x <= 60; ++x) {
+				table[x][y] = '0';
+			}
+		}
+	} else {
+		for (short y = 1; y <= row; ++y) {
+			for (short x = 1; x <= col; ++x) {
+				table[x][y] = save.table[x][y];
+				visible[x][y] = save.visible[x][y];
+				flag[x][y] = save.flag[x][y];
+			}
 		}
 	}
 }
-
 
 
 // randomize mines and put numbers on the grid
@@ -365,6 +452,7 @@ void print_game() {
 	print("<d> to discorver the cell", 80, 10, 15);
 	print("<f> to flag/unflag the cell", 80, 12, 15);
 	print("<esc> to exit", 80, 14, 15);
+	print("<shift> + <s> to save", 80, 16, 15);
 
 	for (short y = 1; y <= row; ++y) {
 		for (short x = 1; x <= col; ++x) {
@@ -372,8 +460,13 @@ void print_game() {
 		}
 	}
 
-	// initial chosen cell
-	print_cell(1, 1, false, true);
+	if (from_save == false) {
+		print_cell(1, 1, false, true);
+	} else {
+		print_cell(game_x, game_y, false, true);
+		current_timer = save.current_timer;
+		print(current_timer, 95, 5, 15);
+	}
 }
 
 
@@ -429,7 +522,7 @@ void keystroke_game() {
 						}
 					}
 
-					if ((short)(table[game_x][game_y]) - (short)('0') <= count_flag) {
+					if ((short)(table[game_x][game_y]) - (short)('0') == count_flag) {
 						for (short y = std::max(1, game_y - 1); y <= std::min(row, (short)(game_y + 1)); ++y) {
 							for (short x = std::max(1, game_x - 1); x <= std::min(col, (short)(game_x + 1)); ++x) {
 								if (flag[x][y] == false && visible[x][y] == false) {
@@ -437,7 +530,7 @@ void keystroke_game() {
 									if (table[x][y] == '*') stack.push_back(std::make_pair(x, y));
 
 									if (table[x][y] == ' ') {
-										flood_fill(game_x, game_y);
+										flood_fill(x, y);
 									}
 
 									visible[x][y] = true;
@@ -452,8 +545,16 @@ void keystroke_game() {
 
 				if (first_click == true) {
 					first_click = false;
-					generate();
-					timer = last_time = time(NULL);
+					if (from_save == false || (from_save == true && save.first_click == true)) {
+						generate();
+					}
+
+					last_time = time(NULL);
+					if (from_save == false) {
+						timer = time(NULL);
+					} else {
+						timer = time(NULL) - s2i(current_timer);
+					}
 				}
 
 				visible[game_x][game_y] = true;
@@ -474,7 +575,45 @@ void keystroke_game() {
 			if (key == 102 && visible[game_x][game_y] == false) {
 				flag[game_x][game_y] ^= 1;
 
+				if (first_click == true) {
+					first_click = false;
+
+					last_time = time(NULL);
+
+					if (from_save == false) {
+						timer = time(NULL);
+					} else {
+						timer = time(NULL) - s2i(current_timer);
+					}
+				}
+
 				print_cell(game_x, game_y, false, true);
+			}
+
+			// S
+			if (key == 83) {
+				save.col = col;
+				save.row = row;
+				save.mines = mines;
+				save.current_timer = current_timer;
+				save.first_click = first_click;
+				save.game_x = game_x;
+				save.game_y = game_y;
+
+				for (short j = 1; j <= col; ++j) {
+					for (short i = 1; i <= row; ++i) {
+						save.table[i][j] = table[i][j];
+						save.visible[i][j] = visible[i][j];
+						save.flag[i][j] = flag[i][j];
+					}
+				}
+
+				from_save = false;
+				write_file();
+
+				print("SAVE COMPLETE", 80, 18, 15);
+			} else {
+				print("             ", 80, 18, 15);
 			}
 
 			// check win after keyboard hit
@@ -482,10 +621,10 @@ void keystroke_game() {
 				// to not print selected bomb
 				game_x = game_y = 0;
 				win = true;
-
 				end_game();
 				return;
 			}
+
 		} else if (first_click == false) {
 			if (time(NULL) != last_time) {
 				current_timer = i2s(time(NULL) - timer);
@@ -505,8 +644,32 @@ void keystroke_game() {
 	}
 }
 
+
 void end_game() {
 	system("cls");
+
+	if (from_save == true) {
+		save.col = 0;
+	}
+
+	if (win == true) {
+		if (col == 9 && row == 9 && mines == 10) {
+			if (save.score_b != 0) save.score_b = std::min((short)(s2i(current_timer)), save.score_b);
+			else save.score_b = s2i(current_timer);
+		}
+
+		if (col == 16 && row == 16 && mines == 40) {
+			if (save.score_i != 0) save.score_i = std::min((short)(s2i(current_timer)), save.score_i);
+			else save.score_i = s2i(current_timer);
+		}
+
+		if (col == 30 && row == 16 && mines == 99) {
+			if (save.score_e != 0) save.score_e = std::min((short)(s2i(current_timer)), save.score_e);
+			else save.score_e = s2i(current_timer);
+		}
+	}
+
+	write_file();
 
 	print("TIME", 90, 5, 15);
 	if (current_timer == "999") print(current_timer, 95, 5, 64);
@@ -527,7 +690,6 @@ void end_game() {
 	print("<r> to restart", 80, 8, 15);
 	print("<f> to return to menu", 80, 10, 15);
 	print("<esc> to exit", 80, 12, 15);
-	// print("<shift s> to save", 80, 14, 15);
 
 	time_t last_print = time(NULL);
 	short color_win[2] = {46, 234}, current_color = 0;
@@ -558,6 +720,7 @@ void end_game() {
 	}
 }
 
+
 bool check_win() {
 	short count_visible = 0;
 
@@ -568,4 +731,84 @@ bool check_win() {
 	}
 
 	return (count_visible == row * col);
+}
+
+
+
+// read data from z.d file
+void read_file() {
+	std::ifstream z;
+	z.open("z.d");
+
+// from last save
+	z >> save.col;
+
+	// if there is a save
+	if (save.col != 0) {
+		z >> save.row >> save.mines >> save.current_timer >> save.game_x >> save.game_y >> save.first_click;
+		std::string temp;
+
+		getline(z, temp);
+		getline(z, temp);
+		for (short j = 1; j <= save.row; ++j) {
+			for (short i = 1; i <= save.col; ++i) {
+				save.table[i][j] = temp[(j - 1) * save.row + i - 1];
+			}
+		}
+
+		z >> temp;
+		for (short j = 1; j <= save.row; ++j) {
+			for (short i = 1; i <= save.col; ++i) {
+				save.visible[i][j] = (temp[(j - 1) * save.row + i - 1] == '1');
+			}
+		}
+
+		z >> temp;
+		for (short j = 1; j <= save.row; ++j) {
+			for (short i = 1; i <= save.col; ++i) {
+				save.flag[i][j] = (temp[(j - 1) * save.row + i - 1] == '1');
+			}
+		}
+	}
+
+// from leaderboard
+	z >> save.score_b >> save.score_i >> save.score_e;
+	// std::cout << save.score_b << " " << save.score_i << " " << save.score_e << " " << temp << std::endl;
+	// std::cin >> cur_x;
+
+	z.close();
+}
+
+
+void write_file() {
+	std::ofstream z;
+	z.open("z.d");
+
+	z << save.col;
+	if (save.col != 0) {
+		z << " " << save.row << " " << save.mines << " " << save.current_timer;
+		z << " " << save.game_x << " " << save.game_y << " " << save.first_click << "\n";
+
+		for (short j = 1; j <= col; ++j) {
+			for (short i = 1; i <= row; ++i) {
+				z << save.table[i][j];
+			}
+		}
+		z << "\n";
+		for (short j = 1; j <= col; ++j) {
+			for (short i = 1; i <= row; ++i) {
+				z << save.visible[i][j];
+			}
+		}
+		z << "\n";
+		for (short j = 1; j <= col; ++j) {
+			for (short i = 1; i <= row; ++i) {
+				z << save.flag[i][j];
+			}
+		}
+	}
+
+	z << "\n" << save.score_b << " " << save.score_i << " " << save.score_e;
+
+	z.close();
 }
