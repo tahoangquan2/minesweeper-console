@@ -184,10 +184,6 @@ void print_menu() {
 		print(">", cur_x, cur_y, 15);
 
 		read_file();
-		short temp = save.col;
-		save.col = 0;
-		write_file();
-		save.col = temp;
 
 		print("LEADERBOARD", 7, 20);
 		print("Beginner:", 7, 22);
@@ -258,18 +254,22 @@ void keystroke_menu() {
 				}
 
 				if (cur_y == 14) {
+					std::string temp;
+
 					do {
 						system("cls");
 						print("Number of rows [2, 20]:", 7, 8, 15);
 						at(7, 9);
-						std::cin >> row;
+						std::cin >> temp;
+						row = s2i(temp);
 					} while (row < 2 || 20 < row);
 
 					do {
 						system("cls");
 						print("Number of columns [2, 60]:", 7, 8, 15);
 						at(7, 9);
-						std::cin >> col;
+						std::cin >> temp;
+						col = s2i(temp);
 					} while (col < 2 || 60 < col);
 
 					do {
@@ -279,7 +279,8 @@ void keystroke_menu() {
 						std::cout << "Number of mines [1, " << std::min(col * row - 1, 999) << "]:";
 						SetConsoleTextAttribute(h_console, 7);
 						at(7, 9);
-						std::cin >> mines;
+						std::cin >> temp;
+						mines = s2i(temp);
 					} while (mines < 1 || col * row - 1 < mines);
 
 					play();
@@ -312,7 +313,6 @@ void print_cell(short x, short y, bool e, bool c) {
 // start playing the game
 void play() {
 	skip = false;
-
 	while (skip == false) {
 		setup_game();
 		print_game();
@@ -335,7 +335,6 @@ void setup_game() {
 	first_click = true;
 	win = false;
 	current_timer = "000";
-
 	stack.clear();
 
 	if (from_save == false) {
@@ -600,8 +599,8 @@ void keystroke_game() {
 				save.game_x = game_x;
 				save.game_y = game_y;
 
-				for (short j = 1; j <= col; ++j) {
-					for (short i = 1; i <= row; ++i) {
+				for (short j = 1; j <= row; ++j) {
+					for (short i = 1; i <= col; ++i) {
 						save.table[i][j] = table[i][j];
 						save.visible[i][j] = visible[i][j];
 						save.flag[i][j] = flag[i][j];
@@ -700,9 +699,9 @@ void end_game() {
 	while (true) {
 		if (kbhit()) {
 			short key = input();
-
+			// r
 			if (key == 114) return;
-
+			// f
 			if (key == 102) {
 				skip = true;
 				return;
@@ -740,46 +739,43 @@ void read_file() {
 	std::ifstream z;
 	z.open("z.d");
 
-// from last save
 	z >> save.col;
 
 	// if there is a save
 	if (save.col != 0) {
 		z >> save.row >> save.mines >> save.current_timer >> save.game_x >> save.game_y >> save.first_click;
+
 		std::string temp;
 
 		getline(z, temp);
 		getline(z, temp);
 		for (short j = 1; j <= save.row; ++j) {
 			for (short i = 1; i <= save.col; ++i) {
-				save.table[i][j] = temp[(j - 1) * save.row + i - 1];
+				save.table[i][j] = temp[(j - 1) * save.col + i - 1];
 			}
 		}
 
 		z >> temp;
 		for (short j = 1; j <= save.row; ++j) {
 			for (short i = 1; i <= save.col; ++i) {
-				save.visible[i][j] = (temp[(j - 1) * save.row + i - 1] == '1');
+				save.visible[i][j] = (temp[(j - 1) * save.col + i - 1] == '1');
 			}
 		}
 
 		z >> temp;
 		for (short j = 1; j <= save.row; ++j) {
 			for (short i = 1; i <= save.col; ++i) {
-				save.flag[i][j] = (temp[(j - 1) * save.row + i - 1] == '1');
+				save.flag[i][j] = (temp[(j - 1) * save.col + i - 1] == '1');
 			}
 		}
 	}
 
-// from leaderboard
 	z >> save.score_b >> save.score_i >> save.score_e;
-	// std::cout << save.score_b << " " << save.score_i << " " << save.score_e << " " << temp << std::endl;
-	// std::cin >> cur_x;
 
 	z.close();
 }
 
-
+// write data to z.d file
 void write_file() {
 	std::ofstream z;
 	z.open("z.d");
@@ -789,20 +785,20 @@ void write_file() {
 		z << " " << save.row << " " << save.mines << " " << save.current_timer;
 		z << " " << save.game_x << " " << save.game_y << " " << save.first_click << "\n";
 
-		for (short j = 1; j <= col; ++j) {
-			for (short i = 1; i <= row; ++i) {
+		for (short j = 1; j <= row; ++j) {
+			for (short i = 1; i <= col; ++i) {
 				z << save.table[i][j];
 			}
 		}
 		z << "\n";
-		for (short j = 1; j <= col; ++j) {
-			for (short i = 1; i <= row; ++i) {
+		for (short j = 1; j <= row; ++j) {
+			for (short i = 1; i <= col; ++i) {
 				z << save.visible[i][j];
 			}
 		}
 		z << "\n";
-		for (short j = 1; j <= col; ++j) {
-			for (short i = 1; i <= row; ++i) {
+		for (short j = 1; j <= row; ++j) {
+			for (short i = 1; i <= col; ++i) {
 				z << save.flag[i][j];
 			}
 		}
